@@ -2,7 +2,18 @@ import streamlit as st
 import pandas as pd
 from openai import OpenAI
 
-# Set page title and description.
+# Retrieve secrets from the secrets file.
+openai_api_key = st.secrets["openai"]["api_key"]
+app_password = st.secrets["app"]["password"]
+
+# Prompt user for the app password.
+password_input = st.text_input("Enter App Password", type="password")
+
+if password_input != app_password:
+    st.error("Incorrect password. Please try again.")
+    st.stop()  # Stop execution until the correct password is entered.
+
+# If password is correct, continue with the app.
 st.title("💬 Medical Case Chatbot")
 st.write(
     "This chatbot presents a medical case based on the details you provide and guides a stepwise evaluation. "
@@ -34,54 +45,49 @@ if st.button("Start Medical Case Chat"):
     else:
         st.error("Please provide case details to start the conversation.")
 
-# Ask for the OpenAI API key.
-openai_api_key = st.text_input("OpenAI API Key", type="password")
-if not openai_api_key:
-    st.info("Please add your OpenAI API key to continue.", icon="🗝️")
-else:
-    # Create an OpenAI client.
-    client = OpenAI(api_key=openai_api_key)
+# Create an OpenAI client.
+client = OpenAI(api_key=openai_api_key)
 
-    # Ensure messages exist in session state.
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
+# Ensure messages exist in session state.
+if "messages" not in st.session_state:
+    st.session_state.messages = []
 
-    # Display existing chat messages.
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+# Display existing chat messages.
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
 
-    # Chat input for the user.
-    if prompt := st.chat_input("Your response..."):
-        # Store the user’s prompt.
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.markdown(prompt)
+# Chat input for the user.
+if prompt := st.chat_input("Your response..."):
+    # Store the user’s prompt.
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    with st.chat_message("user"):
+        st.markdown(prompt)
 
-        # Generate a response from the AI using the OpenAI API.
-        stream = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": m["role"], "content": m["content"]}
-                for m in st.session_state.messages
-            ],
-            stream=True,
+    # Generate a response from the AI using the OpenAI API.
+    stream = client.chat.completions.create(
+        model="gpt-3.5-turbo",
+        messages=[
+            {"role": m["role"], "content": m["content"]}
+            for m in st.session_state.messages
+        ],
+        stream=True,
+    )
+    with st.chat_message("assistant"):
+        response = st.write_stream(stream)
+    st.session_state.messages.append({"role": "assistant", "content": response})
+
+# Add a save button to download the conversation as CSV.
+if st.button("Save Conversation"):
+    if st.session_state.messages:
+        # Convert messages to a DataFrame.
+        df = pd.DataFrame(st.session_state.messages)
+        csv = df.to_csv(index=False).encode("utf-8")
+        st.download_button(
+            "Download Conversation as CSV",
+            data=csv,
+            file_name="conversation.csv",
+            mime="text/csv"
         )
-        with st.chat_message("assistant"):
-            response = st.write_stream(stream)
-        st.session_state.messages.append({"role": "assistant", "content": response})
-
-    # Add a save button to download the conversation as CSV.
-    if st.button("Save Conversation"):
-        if st.session_state.messages:
-            # Convert messages to a DataFrame.
-            df = pd.DataFrame(st.session_state.messages)
-            csv = df.to_csv(index=False).encode("utf-8")
-            st.download_button(
-                "Download Conversation as CSV",
-                data=csv,
-                file_name="conversation.csv",
-                mime="text/csv"
-            )
-        else:
-            st.warning("No conversation to save yet!")
+    else:
+        st.warning("No conversation to save yet!")
